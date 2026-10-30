@@ -1,9 +1,9 @@
-import type { UiLanguage } from '../i18n/uiText';
+import { DEFAULT_UI_LANGUAGE, type UiLanguage } from '../i18n/uiText';
 
 export const UI_LANGUAGE_STORAGE_KEY = 'dsa.uiLanguage';
 
 export function normalizeUiLanguage(value?: string | null): UiLanguage | null {
-  if (value === 'zh' || value === 'en') {
+  if (value === 'zh' || value === 'en' || value === 'ko') {
     return value;
   }
   return null;
@@ -45,7 +45,10 @@ export function persistUiLanguage(storage: Storage | null, language: UiLanguage)
   }
 }
 
-function getBrowserUiLanguage(navigatorLike?: Pick<Navigator, 'language' | 'languages'> | null): UiLanguage {
+function getBrowserUiLanguage(
+  navigatorLike?: Pick<Navigator, 'language' | 'languages'> | null,
+  fallback: UiLanguage = 'zh',
+): UiLanguage {
   const languageCandidates = [
     ...(Array.isArray(navigatorLike?.languages) ? navigatorLike?.languages ?? [] : []),
     navigatorLike?.language,
@@ -59,33 +62,49 @@ function getBrowserUiLanguage(navigatorLike?: Pick<Navigator, 'language' | 'lang
     if (normalized.startsWith('en')) {
       return 'en';
     }
+    if (normalized.startsWith('ko')) {
+      return 'ko';
+    }
   }
 
-  return 'zh';
+  return fallback;
 }
 
 export function resolveInitialUiLanguage({
   storage,
   navigatorLike,
+  fallback = 'zh',
 }: {
   storage?: Storage | null;
   navigatorLike?: Pick<Navigator, 'language' | 'languages'> | null;
+  /** 저장된 선택도, 지원하는 브라우저 언어도 없을 때 쓰는 언어 (업스트림 기본값 zh) */
+  fallback?: UiLanguage;
 } = {}): UiLanguage {
   const stored = getStoredUiLanguage(storage);
   if (stored) {
     return stored;
   }
 
-  return getBrowserUiLanguage(navigatorLike);
+  return getBrowserUiLanguage(navigatorLike, fallback);
 }
 
 export function getRuntimeInitialLanguage(): UiLanguage {
   if (typeof window === 'undefined') {
-    return 'zh';
+    return DEFAULT_UI_LANGUAGE;
   }
 
+  // 한국어 포크: 저장된 선택 → 브라우저 언어(zh/en/ko) → 한국어 순으로 정한다.
   return resolveInitialUiLanguage({
     storage: getUiLanguageStorage(),
     navigatorLike: window.navigator,
+    fallback: DEFAULT_UI_LANGUAGE,
   });
+}
+
+/**
+ * React 밖(스토어, API 오류 처리 등)에서 쓰는 문구 선택기.
+ * 현재 UI 언어가 한국어일 때만 한국어를 돌려주고, 그 밖에는 기존 중국어 문구를 그대로 쓴다.
+ */
+export function koOrZh(zh: string, ko: string): string {
+  return getRuntimeInitialLanguage() === 'ko' ? ko : zh;
 }
